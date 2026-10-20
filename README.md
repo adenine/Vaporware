@@ -24,6 +24,23 @@ prototype.
 | [`07-providers.md`](07-providers.md) | Providers: the loose-coupling pattern for swappable capabilities |
 | [`08-test-experiences.md`](08-test-experiences.md) | First end-to-end tests: Magic Word and Presence Light |
 
+## Observers
+
+Observers are the sensing side of Vaporware: each one turns a raw
+signal (camera, microphone, sensors, online services) into structured
+events, published over MQTT and/or Spacebrew 2.0.
+
+Each Observer is an independent piece of software. It can be used on its
+own, together with the other Observers and tools, and with or without
+the Vaporware service.
+
+| Observer | What it does |
+|---|---|
+| [VaporwareVisualObserver](https://github.com/adenine/VaporwareVisualObserver) | Detects and tracks people and objects in a camera feed and publishes enter/exit/location events, with switchable privacy modes. The successor to OpenTSPS. |
+| [VaporwareSoundObserver](https://github.com/adenine/VaporwareSoundObserver) | Listens on a microphone, transcribes speech and classifies sounds through switchable engines, and can speak through TTS outputs. |
+| [VaporwareEnvironmentObserver](https://github.com/adenine/VaporwareEnvironmentObserver) | Polls location, place, weather, and air quality sensors and services on a timer, and publishes the conditions of the space around you. |
+| [VaporwareDigitalServiceObserver](https://github.com/adenine/VaporwareDigitalServiceObserver) | Observes your presence and activity in digital services. Just getting started. |
+
 ## Repo layout
 
 ```
