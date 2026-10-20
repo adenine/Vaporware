@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vaporware — Admin (prototype)</title>
+  <link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+  <header>
+    <h1>Vaporware <span class="muted">— admin (prototype)</span></h1>
+  </header>
+
+  <main>
+    <section class="panel" id="session-panel">
+      <h2>Session</h2>
+      <p id="session-status" class="status">Loading…</p>
+      <label class="checkbox-row">
+        <input type="checkbox" id="include-sound-observer" checked />
+        Include SoundObserver (logs events published by the standalone SoundObserver app)
+      </label>
+      <div class="actions">
+        <button id="start-btn">Start session</button>
+        <button id="stop-btn" disabled>Stop session</button>
+      </div>
+    </section>
+
+    <section class="panel" id="services-panel">
+      <h2>Connected services</h2>
+      <ul id="services-list"><li class="muted">No active session</li></ul>
+    </section>
+
+    <section class="panel" id="speak-panel">
+      <h2>Speak (test TTS)</h2>
+      <div class="actions">
+        <select id="speak-profile" disabled></select>
+        <input id="speak-text" type="text" placeholder="Text to speak…" disabled />
+        <button id="speak-btn" disabled>Speak</button>
+      </div>
+    </section>
+
+    <section class="panel" id="listen-panel">
+      <h2>SoundObserver</h2>
+      <p id="listen-status" class="status idle">Not included in this session</p>
+      <p class="muted">Runs as its own project — see <code>../VaporwareSoundObserver</code>. Vaporware only subscribes to its MQTT events; it doesn't run any mic capture itself.</p>
+    </section>
+
+    <section class="panel" id="log-panel">
+      <h2>Session log</h2>
+      <p id="log-context" class="muted"></p>
+      <table id="log-table">
+        <thead><tr><th>Time</th><th>Event</th><th>Details</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel" id="history-panel">
+      <h2>Past sessions</h2>
+      <ul id="history-list"><li class="muted">None yet</li></ul>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>

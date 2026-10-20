@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisualStory — Vaporware</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<!--
+  VisualStory — a live Spacebrew story, sibling to ../ContextStory
+
+  Registers as a Spacebrew 2.0 client (subscriber only, fixed name
+  "VisualStory") declaring a subscriber slot for every one of
+  VaporwareVisualObserver's six real publishers, both shapes it uses:
+
+    observedEntered    string   e.g. "dog", "pizza", "laptop", "person"
+    observedExited      string   e.g. "dog" (received, not acted on — see below)
+    object_entered      json     {category, id, centroid, bbox, mode?}
+    object_exited        json     {category, id, mode?}
+    object_location      json     {category, id, centroid, bbox, mode?}
+    observedPosition     json     {category, id, centroid, bbox, mode?}
+
+  (see ../../../../VaporwareVisualObserver/visualobserver/spacebrew/events.py
+  and .../visualobserver/pipeline/categories.py for the real source.)
+  Declaring all six — not just one — is what lets every one of
+  VaporwareVisualObserver's publishers actually be wired to this page in
+  the Spacebrew patch bay; a page that only subscribes to a subset of a
+  publisher's topics can only ever be connected to that subset.
+
+  The two shapes carry different amounts of detail:
+  - The plain-string events (observedEntered) carry the *specific* COCO
+    class name but no category, so this page keeps its own copy of the
+    category → class-name table (CATEGORIES below, copied from
+    categories.py) and buckets each class name into one of the six
+    slots itself, e.g. "dog" -> animal -> "a dog".
+  - The JSON events (object_entered/object_location/observedPosition)
+    carry the category directly but not the specific class name, so
+    those render a generic per-category phrase instead, e.g.
+    category "animal" -> "an animal" (see CATEGORY_GENERIC_PHRASE).
+  If both shapes are wired up at once for the same detection (which is
+  how the real app publishes them — one JSON event and one string event
+  per detection, back to back), the generic JSON phrase lands first and
+  the more specific string phrase overwrites it a moment later, so the
+  display converges on the specific name either way.
+
+  Deliberately doesn't *act* on either "exited" topic (object_exited,
+  observedExited), though both are subscribed so they show up correctly
+  in the patch bay: neither carries enough to tell "the last {category}
+  left" from "one of several {category}s left, another is still here"
+  without per-id bookkeeping this page doesn't do — clearing a slot on
+  exit would sometimes blank out something still in view. Same "shows
+  whatever it's heard most recently, doesn't try to track absence"
+  philosophy as ../ContextStory.
+
+  Any combination of the six categories can be empty (never seen
+  anything yet) or filled (something's been seen) independently and in
+  any order — the sentence below is written to read naturally in all
+  2^6 combinations, not just "all six filled."
+
+  Requires Spacebrew 2.0 running locally (ws://localhost:8088/ws/client
+  — see ../ContextStory/index.html's header comment for the full setup).
+
+  Quick manual test with no routing at all — from a terminal, once
+  Spacebrew 2.0 is running and this page is open, publish straight to
+  VisualStory's own topics:
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "person"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "dog"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "pizza"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "laptop"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "cup"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/observedEntered", "message": "chair"}'
+
+    curl -X POST http://localhost:8088/api/publish -H "Content-Type: application/json" \
+      -d '{"topic": "VisualStory/object_location", "message": "{\"category\": \"animal\", \"id\": 3, \"centroid\": {\"x\": 120, \"y\": 80}, \"bbox\": {\"x1\": 0, \"y1\": 0, \"x2\": 1, \"y2\": 1}}"}'
+
+  To wire up the real VaporwareVisualObserver instead: check
+  `GET /api/routes` first (the router keeps one subscriber per
+  publisher, so this replaces any existing route), then
+  `POST /api/routes` once per topic you want, e.g.
+  {"pub": "VaporwareVisualObserver/observedEntered",
+  "sub": "VisualStory/observedEntered"}.
+-->
+<style>
+  :root {
+    --bg: #0a0a0d;
+    --ink: #d8d8e2;
+    --ink-dim: #6e6e7c;
+
+    --c-person: #ff8a65;
+    --c-animal: #ffd166;
+    --c-food: #ff6fae;
+    --c-technology: #5ec8f8;
+    --c-household: #a78bfa;
+    --c-furniture: #6fe0c5;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    overflow: auto;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    font-family: "Instrument Serif", Georgia, serif;
+  }
+
+  main {
+    max-width: 1400px;
+    padding: 6vmin 7vmin;
+  }
+
+  #story {
+    margin: 0;
+    text-align: left;
+    color: var(--ink);
+    font-weight: 400;
+    line-height: 1.3;
+    font-size: clamp(1.8rem, 4.6vw, 5.5rem);
+    letter-spacing: 0.002em;
+  }
+
+  .var {
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .var.wrap { white-space: normal; }
+
+  .var.pending {
+    opacity: 0.45;
+    filter: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+  }
+
+  .v-person     { color: var(--c-person); }
+  .v-animal     { color: var(--c-animal); }
+  .v-food       { color: var(--c-food); }
+  .v-technology { color: var(--c-technology); }
+  .v-household  { color: var(--c-household); }
+  .v-furniture  { color: var(--c-furniture); }
+
+  /* slow ambient glow, staggered per-variable so the page never sits
+     perfectly still even with no new messages arriving */
+  .v-person     { animation: glow 4.4s ease-in-out infinite; }
+  .v-animal     { animation: glow 5.6s ease-in-out infinite; animation-delay: 0.3s; }
+  .v-food       { animation: glow 5.0s ease-in-out infinite; animation-delay: 0.6s; }
+  .v-technology { animation: glow 6.2s ease-in-out infinite; animation-delay: 0.9s; }
+  .v-household  { animation: glow 4.8s ease-in-out infinite; animation-delay: 1.2s; }
+  .v-furniture  { animation: glow 5.8s ease-in-out infinite; animation-delay: 1.5s; }
+
+  @keyframes glow {
+    0%, 100% { text-shadow: 0 0 6px currentColor, 0 0 0px currentColor; }
+    50%      { text-shadow: 0 0 22px currentColor, 0 0 8px currentColor; }
+  }
+
+  /* a sharper, one-shot flash fired whenever a real message arrives */
+  .var.flash {
+    animation: flash 700ms ease-out !important;
+  }
+  @keyframes flash {
+    0%   { filter: brightness(2.2); }
+    100% { filter: brightness(1); }
+  }
+
+  #status {
+    position: fixed;
+    top: 18px;
+    right: 22px;
+    font-size: clamp(0.65rem, 1vw, 0.85rem);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  #status .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: var(--ink-dim);
+    vertical-align: middle;
+  }
+  #status.connected .dot { background: #7ee08a; }
+  #status.connected { color: #7ee08a; }
+  #status.error .dot { background: #f5715f; }
+  #status.error { color: #f5715f; }
+</style>
+</head>
+<body>
+
+  <div id="status"><span class="dot"></span><span id="status-text">connecting…</span></div>
+
+  <main>
+    <p id="story">
+      Right now, in view: <span id="v-person" class="var pending wrap v-person">no one</span>.
+      Nearby, <span id="v-animal" class="var pending wrap v-animal">no creature</span>.
+      On the table: <span id="v-food" class="var pending wrap v-food">nothing to eat</span>,
+      beside <span id="v-technology" class="var pending wrap v-technology">no device</span>.
+      Scattered around the room: <span id="v-household" class="var pending wrap v-household">no object</span>
+      and <span id="v-furniture" class="var pending wrap v-furniture">no furniture</span>.
+      This is what Vaporware sees.
+    </p>
+  </main>
+
+<script>
+(function () {
+  // --- Configuration -------------------------------------------------
+  // Override with ?host=...&port=... if Spacebrew isn't on localhost:8088.
+  const params = new URLSearchParams(location.search);
+  const WS_HOST = params.get('host') || 'localhost';
+  const WS_PORT = params.get('port') || '8088';
+
+  const CLIENT_NAME = 'VisualStory';
+  // No commas here — the registration string below is comma-delimited
+  // ("name, description, pubs(...), subs(...)") and the router parses it
+  // positionally, so a comma inside DESCRIPTION shifts everything after
+  // it and corrupts the pubs/subs fields. (Confirmed the hard way: an
+  // earlier version of this line had a comma and the client registered
+  // with garbled pubs/subs.) Same landmine VaporwareVisualObserver's own
+  // spacebrew/client.py documents for its own DESCRIPTION.
+  const DESCRIPTION = 'Turns VisualObserver detections into a live category story.';
+  // Every real publisher VaporwareVisualObserver has, both shapes —
+  // see the header comment for why declaring all six matters.
+  const SUBSCRIBERS = [
+    'observedEntered:string',
+    'observedExited:string',
+    'object_entered:json',
+    'object_exited:json',
+    'object_location:json',
+    'observedPosition:json',
+  ];
+
+  // Copied from VaporwareVisualObserver's pipeline/categories.py — the
+  // real source of truth for which COCO class belongs to which
+  // category. "umbrella" and "handbag" are listed under both household
+  // and furniture there (an overlap in the source, not a typo here);
+  // building the lookup below keeps the first category that claims a
+  // class, i.e. household wins, matching object declaration order.
+  const CATEGORIES = {
+    person: ['person'],
+    animal: ['bird', 'cat', 'dog'],
+    food: ['banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake'],
+    technology: ['book', 'cell phone', 'tv', 'laptop', 'mouse', 'remote', 'keyboard'],
+    household: ['backpack', 'tie', 'umbrella', 'handbag', 'sports ball', 'frisbee', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'scissors'],
+    furniture: ['chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'clock', 'oven', 'toaster', 'microwave', 'umbrella', 'handbag', 'sink', 'refrigerator', 'teddy bear', 'suitcase'],
+  };
+  const CLASS_TO_CATEGORY = {};
+  for (const [category, classNames] of Object.entries(CATEGORIES)) {
+    for (const className of classNames) {
+      if (!(className in CLASS_TO_CATEGORY)) CLASS_TO_CATEGORY[className] = category;
+    }
+  }
+
+  const ELEMENT_FOR_CATEGORY = {
+    person: 'v-person',
+    animal: 'v-animal',
+    food: 'v-food',
+    technology: 'v-technology',
+    household: 'v-household',
+    furniture: 'v-furniture',
+  };
+
+  // Used when only a category is known (the JSON events), not a
+  // specific class name (only the string events carry that).
+  const CATEGORY_GENERIC_PHRASE = {
+    person: 'a person',
+    animal: 'an animal',
+    food: 'some food',
+    technology: 'a device',
+    household: 'a household item',
+    furniture: 'a piece of furniture',
+  };
+
+  const statusEl = document.getElementById('status');
+  const statusTextEl = document.getElementById('status-text');
+  let reconnectTimer = null;
+
+  function setStatus(text, cls) {
+    statusTextEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+
+  function article(word) {
+    return /^[aeiou]/i.test(word) ? 'an' : 'a';
+  }
+
+  function tryParseJSON(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // --- Rendering -------------------------------------------------------
+  function renderCategory(category, text) {
+    const elId = ELEMENT_FOR_CATEGORY[category];
+    const el = elId && document.getElementById(elId);
+    if (!el) return;
+
+    el.textContent = text;
+    el.classList.remove('pending');
+
+    // Restart the flash animation even if one is already mid-flight.
+    el.classList.remove('flash');
+    void el.offsetWidth; // force reflow so the animation re-triggers
+    el.classList.add('flash');
+  }
+
+  // From a plain class-name string (observedEntered) — the specific path.
+  function updateFromClassName(raw) {
+    const name = raw.trim().toLowerCase();
+    if (!name) return;
+    const category = CLASS_TO_CATEGORY[name];
+    if (!category) return; // an unmapped class name — ignore rather than guess
+    renderCategory(category, `${article(name)} ${name}`);
+  }
+
+  // From a JSON payload carrying just {category, ...} — the generic path.
+  function updateFromCategoryJSON(raw) {
+    const d = tryParseJSON(raw);
+    if (!d || typeof d.category !== 'string') return;
+    const phrase = CATEGORY_GENERIC_PHRASE[d.category];
+    if (!phrase) return; // unrecognized category — ignore rather than guess
+    renderCategory(d.category, phrase);
+  }
+
+  // --- Spacebrew 2.0 WebSocket client -----------------------------------
+  function connect() {
+    const ws = new WebSocket(`ws://${WS_HOST}:${WS_PORT}/ws/client`);
+
+    ws.onopen = function () {
+      setStatus('live', 'connected');
+
+      const subsStr = SUBSCRIBERS.join(', ');
+      const regMsg = `${CLIENT_NAME}, ${DESCRIPTION}, pubs(), subs(${subsStr})`;
+      ws.send(JSON.stringify({ cmd: 'register', message: regMsg }));
+
+      SUBSCRIBERS.forEach(function (sub) {
+        const subName = sub.split(':')[0];
+        const topic = `${CLIENT_NAME}/${subName}`;
+        ws.send(JSON.stringify({ cmd: 'subscribe', topic: topic }));
+      });
+    };
+
+    ws.onmessage = function (event) {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (err) {
+        return;
+      }
+      if (!data || !data.topic) return;
+
+      const prefix = CLIENT_NAME + '/';
+      if (!data.topic.startsWith(prefix)) return;
+
+      const subName = data.topic.slice(prefix.length);
+      const message = String(data.message);
+
+      if (subName === 'observedEntered') {
+        updateFromClassName(message);
+      } else if (subName === 'object_entered' || subName === 'object_location' || subName === 'observedPosition') {
+        updateFromCategoryJSON(message);
+      }
+      // observedExited / object_exited: subscribed (so they show up in the
+      // patch bay) but deliberately not acted on — see header comment.
+    };
+
+    ws.onclose = function () {
+      setStatus('offline — retrying…', 'error');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = function () {
+      ws.close();
+    };
+  }
+
+  connect();
+})();
+</script>
+
+</body>
+</html>
